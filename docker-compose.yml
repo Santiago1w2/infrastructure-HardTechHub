@@ -3,11 +3,11 @@ services:
     image: postgres:16
     container_name: hardtech-postgres
     environment:
-      POSTGRES_DB: hardtech_catalog
-      POSTGRES_USER: hardtech
-      POSTGRES_PASSWORD: hardtech
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./postgres/init:/docker-entrypoint-initdb.d
@@ -16,19 +16,17 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-    networks:
-      - hardtech-net
 
   mysql:
     image: mysql:8.0
     container_name: hardtech-mysql
     environment:
-      MYSQL_DATABASE: hardtech_orders
-      MYSQL_USER: hardtech
-      MYSQL_PASSWORD: hardtech
-      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
     ports:
-      - "3306:3306"
+      - "${MYSQL_PORT}:3306"
     command: --default-authentication-plugin=mysql_native_password
     volumes:
       - mysql_data:/var/lib/mysql
@@ -38,10 +36,25 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
-    networks:
-      - hardtech-net
+
+  mongodb:
+    image: mongo:8
+    container_name: hardtech-mongodb
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+    ports:
+      - "${MONGO_PORT}:27017"
+    volumes:
+      - mongodb_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "quit(db.adminCommand('ping').ok ? 0 : 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
 volumes:
   postgres_data:
   mysql_data:
-  localstack_data:
+  mongodb_data:
 
