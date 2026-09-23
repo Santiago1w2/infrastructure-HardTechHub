@@ -14,7 +14,7 @@ docker compose up -d --wait --wait-timeout 180
 docker compose ps
 ```
 
-Publica PostgreSQL 5432, MySQL 3306 y MongoDB 27017. Si se cambian, ajustar también
+Publica PostgreSQL 5432, MySQL 3307 (puerto interno 3306) y MongoDB 27017. Si se cambian, ajustar también
 los puertos del cliente en servicios y las reglas AWS. El Security Group Database
 permite esos puertos desde SG-PROD; no se necesitan reglas públicas para bases.
 Usar la IP privada de Database, nunca nombres Docker desde otra máquina.
