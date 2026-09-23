@@ -1,3 +1,5 @@
+SET ROLE catalog_app;
+
 CREATE TABLE IF NOT EXISTS brands (
     id SERIAL PRIMARY KEY,
     name VARCHAR(120) NOT NULL,
@@ -85,3 +87,5 @@ SELECT c.id, b.id, 'PSU-COR-RM850X', 'Corsair RM850x 850W', 'Fuente modular 80+ 
 FROM categories c CROSS JOIN brands b
 WHERE c.name = 'PSU' AND b.name = 'Corsair'
   AND NOT EXISTS (SELECT 1 FROM products WHERE sku = 'PSU-COR-RM850X');
+
+RESET ROLE;
