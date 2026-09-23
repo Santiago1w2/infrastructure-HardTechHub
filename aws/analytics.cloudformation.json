@@ -1,0 +1,544 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "HardTechHub S3, Glue Data Catalog and Athena business analytics",
+  "Parameters": {
+    "ExistingBucketName": {
+      "Type": "String",
+      "Default": "",
+      "Description": "Existing bucket in this region; leave empty to create one."
+    },
+    "GlueDatabaseName": {
+      "Type": "String",
+      "Default": "hardtech_analytics",
+      "AllowedPattern": "[a-z][a-z0-9_]*"
+    },
+    "WorkGroupName": {
+      "Type": "String",
+      "Default": "hardtech-analytics"
+    },
+    "RuntimeRoleName": {
+      "Type": "String",
+      "Default": "",
+      "Description": "Existing IAM role for analytics; optional policy attachment."
+    }
+  },
+  "Conditions": {
+    "CreateBucket": {
+      "Fn::Equals": [
+        {
+          "Ref": "ExistingBucketName"
+        },
+        ""
+      ]
+    },
+    "AttachRole": {
+      "Fn::Not": [
+        {
+          "Fn::Equals": [
+            {
+              "Ref": "RuntimeRoleName"
+            },
+            ""
+          ]
+        }
+      ]
+    }
+  },
+  "Resources": {
+    "DataBucket": {
+      "Type": "AWS::S3::Bucket",
+      "Condition": "CreateBucket",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            {
+              "ServerSideEncryptionByDefault": {
+                "SSEAlgorithm": "AES256"
+              }
+            }
+          ]
+        },
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true,
+          "BlockPublicPolicy": true,
+          "IgnorePublicAcls": true,
+          "RestrictPublicBuckets": true
+        },
+        "VersioningConfiguration": {
+          "Status": "Enabled"
+        }
+      }
+    },
+    "GlueDatabase": {
+      "Type": "AWS::Glue::Database",
+      "Properties": {
+        "CatalogId": {
+          "Ref": "AWS::AccountId"
+        },
+        "DatabaseInput": {
+          "Name": {
+            "Ref": "GlueDatabaseName"
+          }
+        }
+      }
+    },
+    "BusinessTable": {
+      "Type": "AWS::Glue::Table",
+      "Properties": {
+        "CatalogId": {
+          "Ref": "AWS::AccountId"
+        },
+        "DatabaseName": {
+          "Ref": "GlueDatabase"
+        },
+        "TableInput": {
+          "Name": "business_snapshot",
+          "TableType": "EXTERNAL_TABLE",
+          "Parameters": {
+            "classification": "json",
+            "EXTERNAL": "TRUE"
+          },
+          "StorageDescriptor": {
+            "Columns": [
+              {
+                "Name": "event_type",
+                "Type": "string"
+              },
+              {
+                "Name": "order_id",
+                "Type": "bigint"
+              },
+              {
+                "Name": "order_status",
+                "Type": "string"
+              },
+              {
+                "Name": "product_id",
+                "Type": "bigint"
+              },
+              {
+                "Name": "product_name",
+                "Type": "string"
+              },
+              {
+                "Name": "category",
+                "Type": "string"
+              },
+              {
+                "Name": "quantity",
+                "Type": "bigint"
+              },
+              {
+                "Name": "total_amount",
+                "Type": "decimal(16,2)"
+              },
+              {
+                "Name": "subtotal",
+                "Type": "decimal(16,2)"
+              },
+              {
+                "Name": "movement_id",
+                "Type": "bigint"
+              },
+              {
+                "Name": "movement_type",
+                "Type": "string"
+              },
+              {
+                "Name": "created_at",
+                "Type": "string"
+              },
+              {
+                "Name": "updated_at",
+                "Type": "string"
+              }
+            ],
+            "Location": {
+              "Fn::Join": [
+                "",
+                [
+                  "s3://",
+                  {
+                    "Fn::If": [
+                      "CreateBucket",
+                      {
+                        "Ref": "DataBucket"
+                      },
+                      {
+                        "Ref": "ExistingBucketName"
+                      }
+                    ]
+                  },
+                  "/analytics/business/"
+                ]
+              ]
+            },
+            "InputFormat": "org.apache.hadoop.mapred.TextInputFormat",
+            "OutputFormat": "org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat",
+            "SerdeInfo": {
+              "SerializationLibrary": "org.openx.data.jsonserde.JsonSerDe",
+              "Parameters": {
+                "ignore.malformed.json": "false"
+              }
+            }
+          }
+        }
+      }
+    },
+    "WorkGroup": {
+      "Type": "AWS::Athena::WorkGroup",
+      "Properties": {
+        "Name": {
+          "Ref": "WorkGroupName"
+        },
+        "State": "ENABLED",
+        "WorkGroupConfiguration": {
+          "EnforceWorkGroupConfiguration": true,
+          "PublishCloudWatchMetricsEnabled": true,
+          "BytesScannedCutoffPerQuery": 1073741824,
+          "ResultConfiguration": {
+            "OutputLocation": {
+              "Fn::Join": [
+                "",
+                [
+                  "s3://",
+                  {
+                    "Fn::If": [
+                      "CreateBucket",
+                      {
+                        "Ref": "DataBucket"
+                      },
+                      {
+                        "Ref": "ExistingBucketName"
+                      }
+                    ]
+                  },
+                  "/query-results/"
+                ]
+              ]
+            },
+            "EncryptionConfiguration": {
+              "EncryptionOption": "SSE_S3"
+            }
+          }
+        }
+      }
+    },
+    "RuntimePolicy": {
+      "Type": "AWS::IAM::ManagedPolicy",
+      "Properties": {
+        "Description": "Runtime access to HardTechHub analytics data, catalog and workgroup",
+        "Roles": {
+          "Fn::If": [
+            "AttachRole",
+            [
+              {
+                "Ref": "RuntimeRoleName"
+              }
+            ],
+            {
+              "Ref": "AWS::NoValue"
+            }
+          ]
+        },
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Action": [
+                "s3:GetBucketLocation",
+                "s3:ListBucket"
+              ],
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition"
+                    },
+                    ":s3:::",
+                    {
+                      "Fn::If": [
+                        "CreateBucket",
+                        {
+                          "Ref": "DataBucket"
+                        },
+                        {
+                          "Ref": "ExistingBucketName"
+                        }
+                      ]
+                    }
+                  ]
+                ]
+              }
+            },
+            {
+              "Effect": "Allow",
+              "Action": [
+                "s3:GetObject"
+              ],
+              "Resource": [
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::Join": [
+                          "",
+                          [
+                            "arn:",
+                            {
+                              "Ref": "AWS::Partition"
+                            },
+                            ":s3:::",
+                            {
+                              "Fn::If": [
+                                "CreateBucket",
+                                {
+                                  "Ref": "DataBucket"
+                                },
+                                {
+                                  "Ref": "ExistingBucketName"
+                                }
+                              ]
+                            }
+                          ]
+                        ]
+                      },
+                      "/",
+                      "analytics/*"
+                    ]
+                  ]
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::Join": [
+                          "",
+                          [
+                            "arn:",
+                            {
+                              "Ref": "AWS::Partition"
+                            },
+                            ":s3:::",
+                            {
+                              "Fn::If": [
+                                "CreateBucket",
+                                {
+                                  "Ref": "DataBucket"
+                                },
+                                {
+                                  "Ref": "ExistingBucketName"
+                                }
+                              ]
+                            }
+                          ]
+                        ]
+                      },
+                      "/",
+                      "raw/events/*"
+                    ]
+                  ]
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::Join": [
+                          "",
+                          [
+                            "arn:",
+                            {
+                              "Ref": "AWS::Partition"
+                            },
+                            ":s3:::",
+                            {
+                              "Fn::If": [
+                                "CreateBucket",
+                                {
+                                  "Ref": "DataBucket"
+                                },
+                                {
+                                  "Ref": "ExistingBucketName"
+                                }
+                              ]
+                            }
+                          ]
+                        ]
+                      },
+                      "/",
+                      "query-results/*"
+                    ]
+                  ]
+                }
+              ]
+            },
+            {
+              "Effect": "Allow",
+              "Action": [
+                "s3:PutObject"
+              ],
+              "Resource": [
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::Join": [
+                          "",
+                          [
+                            "arn:",
+                            {
+                              "Ref": "AWS::Partition"
+                            },
+                            ":s3:::",
+                            {
+                              "Fn::If": [
+                                "CreateBucket",
+                                {
+                                  "Ref": "DataBucket"
+                                },
+                                {
+                                  "Ref": "ExistingBucketName"
+                                }
+                              ]
+                            }
+                          ]
+                        ]
+                      },
+                      "/",
+                      "analytics/business/current.jsonl"
+                    ]
+                  ]
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::Join": [
+                          "",
+                          [
+                            "arn:",
+                            {
+                              "Ref": "AWS::Partition"
+                            },
+                            ":s3:::",
+                            {
+                              "Fn::If": [
+                                "CreateBucket",
+                                {
+                                  "Ref": "DataBucket"
+                                },
+                                {
+                                  "Ref": "ExistingBucketName"
+                                }
+                              ]
+                            }
+                          ]
+                        ]
+                      },
+                      "/",
+                      "query-results/*"
+                    ]
+                  ]
+                }
+              ]
+            },
+            {
+              "Effect": "Allow",
+              "Action": [
+                "glue:GetDatabase",
+                "glue:GetTable",
+                "glue:GetPartitions"
+              ],
+              "Resource": [
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:catalog"
+                },
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:database/${GlueDatabaseName}"
+                },
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:table/${GlueDatabaseName}/*"
+                }
+              ]
+            },
+            {
+              "Effect": "Allow",
+              "Action": [
+                "athena:StartQueryExecution",
+                "athena:GetQueryExecution",
+                "athena:GetQueryResults",
+                "athena:StopQueryExecution",
+                "athena:GetWorkGroup"
+              ],
+              "Resource": {
+                "Fn::Sub": "arn:${AWS::Partition}:athena:${AWS::Region}:${AWS::AccountId}:workgroup/${WorkGroupName}"
+              }
+            }
+          ]
+        }
+      }
+    }
+  },
+  "Outputs": {
+    "S3Bucket": {
+      "Value": {
+        "Fn::If": [
+          "CreateBucket",
+          {
+            "Ref": "DataBucket"
+          },
+          {
+            "Ref": "ExistingBucketName"
+          }
+        ]
+      }
+    },
+    "GlueDatabase": {
+      "Value": {
+        "Ref": "GlueDatabaseName"
+      }
+    },
+    "AthenaWorkGroup": {
+      "Value": {
+        "Ref": "WorkGroupName"
+      }
+    },
+    "AthenaOutputLocation": {
+      "Value": {
+        "Fn::Join": [
+          "",
+          [
+            "s3://",
+            {
+              "Fn::If": [
+                "CreateBucket",
+                {
+                  "Ref": "DataBucket"
+                },
+                {
+                  "Ref": "ExistingBucketName"
+                }
+              ]
+            },
+            "/query-results/"
+          ]
+        ]
+      }
+    },
+    "RuntimePolicyArn": {
+      "Value": {
+        "Ref": "RuntimePolicy"
+      }
+    }
+  }
+}
